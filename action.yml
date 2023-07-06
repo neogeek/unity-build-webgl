@@ -1,0 +1,101 @@
+name: 'Unity WebGL Build'
+description: 'Build Unity project as WebGL'
+author: 'Scott Doxey @neogeek'
+branding:
+  color: blue
+  icon: upload-cloud
+
+inputs:
+  UNITY_SERIAL:
+    description: 'The serial key found at https://id.unity.com/en/subscriptions. Keys are only avalible with a Plus or Pro Subscription.'
+    required: true
+  UNITY_USERNAME:
+    description: 'Your email address used to log into https://unity.com/'
+    required: true
+  UNITY_PASSWORD:
+    description: 'Your password used to log into https://unity.com/'
+    required: true
+  UNITY_BUILD_EXECUTE_METHOD:
+    description: 'The method used to build the project as WebGL. See Unity documentation for more information https://docs.unity3d.com/Manual/EditorCommandLineArguments.html'
+    required: true
+  CACHE_INSTALLERS:
+    description: 'If the action should cache the installer files.'
+    required: false
+    default: 'true'
+  WORKING_DIRECTORY:
+    description: 'The directory that contains the Unity project'
+    required: false
+    default: '.'
+  UNITY_INSTALLER_HASH:
+    description: 'Unity installer hash. See editor installers URLs at https://github.com/neogeek/get-unity/blob/main/data/editor-installers.json'
+    required: false
+    default: 35713cd46cd7
+  UNITY_INSTALLER_VERSION:
+    description: 'Unity installer version. See editor installers URLs at https://github.com/neogeek/get-unity/blob/main/data/editor-installers.json'
+    required: false
+    default: 2022.3.4f1
+  UNITY_INSTALLER_URL:
+    description: 'URL for the editor installer. See editor installers URLs at https://github.com/neogeek/get-unity/blob/main/data/editor-installers.json'
+    required: false
+    default: 'https://download.unity3d.com/download_unity/35713cd46cd7/LinuxEditorInstaller/Unity.tar.xz'
+  UNITY_PLUGIN_INSTALLER_URL:
+    description: 'URL for the editor WebGL plugin installer'
+    required: false
+    default: 'https://download.unity3d.com/download_unity/35713cd46cd7/LinuxEditorTargetInstaller/UnitySetup-WebGL-Support-for-Editor-2022.3.4f1.tar.xz'
+
+runs:
+  using: composite
+  steps:
+    - name: Cache Downloads
+      id: cache-downloads
+      uses: actions/cache@v3
+      if: ${{ inputs.CACHE_INSTALLERS == 'true' }}
+      with:
+        path: |
+          .temp/Unity.tar.xz
+          .temp/UnitySetup-WebGL-Support-for-Editor.tar.xz
+        key: unity-${{ inputs.UNITY_INSTALLER_HASH }}
+
+    - name: Download Unity Installer
+      if: steps.cache-downloads.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        echo "Downloading Unity ${{ inputs.UNITY_INSTALLER_VERSION }} from ${{ inputs.UNITY_INSTALLER_URL }}"
+        mkdir -p .temp/
+        curl --retry 5 -o ".temp/Unity.tar.xz" "${{ inputs.UNITY_INSTALLER_URL }}"
+        [ -f ".temp/Unity.tar.xz" ] && echo "Unity.tar.xz has been successfully downloaded!"
+
+    - name: Download WebGL Plugin
+      if: steps.cache-downloads.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        echo "Downloading WebGL Plugin from ${{ inputs.UNITY_PLUGIN_INSTALLER_URL }}"
+        mkdir -p .temp/
+        curl --retry 5 -o ".temp/UnitySetup-WebGL-Support-for-Editor.tar.xz" "${{ inputs.UNITY_PLUGIN_INSTALLER_URL }}"
+        [ -f ".temp/UnitySetup-WebGL-Support-for-Editor.tar.xz" ] && echo "UnitySetup-WebGL-Support-for-Editor.tar.xz has been successfully downloaded!"
+
+    - name: Unpack Unity Installer
+      shell: bash
+      run: |
+        (cd .temp/ && tar -xvf "Unity.tar.xz")
+
+    - name: Unpack WebGL Plugin
+      shell: bash
+      run: |
+        (cd .temp/ && tar -xvf "UnitySetup-WebGL-Support-for-Editor.tar.xz")
+
+    - name: Authenticate with Unity
+      shell: bash
+      run: |
+        ".temp/Editor/Unity" -quit -batchmode -serial "${{ inputs.UNITY_SERIAL }}" -username "${{ inputs.UNITY_USERNAME }}" -password "${{ inputs.UNITY_PASSWORD }}" || true
+
+    - name: Build
+      shell: bash
+      run: |
+        ".temp/Editor/Unity" -projectPath "${{ inputs.WORKING_DIRECTORY }}" -quit -batchmode -nographics -executeMethod "${{ inputs.UNITY_BUILD_EXECUTE_METHOD }}" -logFile -
+
+    - name: Deauthenticate with Unity
+      if: ${{ success() || failure() }}
+      shell: bash
+      run: |
+        ".temp/Editor/Unity" -quit -batchmode -returnlicense
